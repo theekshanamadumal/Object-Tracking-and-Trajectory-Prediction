@@ -116,12 +116,12 @@ class KalmanBoxTracker(object):
       self.kf.update(convert_bbox_to_z(bbox))
       self.update_history.append(bbox)
 
-      if  len(self.update_history)>=no_of_past_frames :
+      if  len(self.update_history)>=self.no_of_past_frames :
           kbt = KalmanBoxTrajectory(self.update_history[0])
-          for j in range(1,no_of_past_frames):
+          for j in range(1,self.no_of_past_frames):
               kbt.predict()
               p = kbt.update(self.update_history[j])
-          for k in range(no_of_future_frames):
+          for k in range(self.o_of_future_frames):
               p = kbt.predict()[0]
               self.predict_history.append(p)
 
