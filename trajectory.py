@@ -5,6 +5,8 @@ Given number of future frames of the trajectory is calculated by Kalman filterin
 by DMTM Samaradiwakara
 2023/06/10
 based on SORT algorithm
+    SORT: A Simple, Online and Realtime Tracker
+    Copyright (C) 2016-2020 Alex Bewley alex@bewley.ai
 """
 
 import numpy as np
