@@ -75,63 +75,82 @@ class KalmanBoxTracker(object):
   This class represents the internal state of individual tracked objects observed as bbox.
   """
   count = 0
-  def __init__(self,bbox):
-    """
-    Initialises a tracker using initial bounding box.
-    """
-    #define constant velocity model
-    self.kf = KalmanFilter(dim_x=7, dim_z=4) 
-    self.kf.F = np.array([[1,0,0,0,1,0,0],[0,1,0,0,0,1,0],[0,0,1,0,0,0,1],[0,0,0,1,0,0,0],  [0,0,0,0,1,0,0],[0,0,0,0,0,1,0],[0,0,0,0,0,0,1]])
-    self.kf.H = np.array([[1,0,0,0,0,0,0],[0,1,0,0,0,0,0],[0,0,1,0,0,0,0],[0,0,0,1,0,0,0]])
+  def __init__(self,bbox,no_of_past_frames=5,no_of_future_frames=5):
+      """
+      Initialises a tracker using initial bounding box.
+      """
+      #define constant velocity model
+      self.kf = KalmanFilter(dim_x=7, dim_z=4) 
+      self.kf.F = np.array([[1,0,0,0,1,0,0],[0,1,0,0,0,1,0],[0,0,1,0,0,0,1],[0,0,0,1,0,0,0],  [0,0,0,0,1,0,0],[0,0,0,0,0,1,0],[0,0,0,0,0,0,1]])
+      self.kf.H = np.array([[1,0,0,0,0,0,0],[0,1,0,0,0,0,0],[0,0,1,0,0,0,0],[0,0,0,1,0,0,0]])
 
-    self.kf.R[2:,2:] *= 10.
-    self.kf.P[4:,4:] *= 1000. #give high uncertainty to the unobservable initial velocities
-    self.kf.P *= 10.
-    self.kf.Q[-1,-1] *= 0.01
-    self.kf.Q[4:,4:] *= 0.01
+      self.kf.R[2:,2:] *= 10.
+      self.kf.P[4:,4:] *= 1000. #give high uncertainty to the unobservable initial velocities
+      self.kf.P *= 10.
+      self.kf.Q[-1,-1] *= 0.01
+      self.kf.Q[4:,4:] *= 0.01
 
-    self.kf.x[:4] = convert_bbox_to_z(bbox)
-    self.time_since_update = 0
-    self.id = KalmanBoxTracker.count
-    KalmanBoxTracker.count += 1
-    self.history = []
-    self.update_history = collections.deque(maxlen=no_of_past_frames)
-    self.predict_history = collections.deque(maxlen=no_of_future_frames)
-    self.hits = 0
-    self.hit_streak = 0
-    self.age = 0
+      self.kf.x[:4] = convert_bbox_to_z(bbox)
+      self.time_since_update = 0
+      self.id = KalmanBoxTracker.count
+      KalmanBoxTracker.count += 1
+      self.history = []
+
+      self.no_of_past_frames = no_of_past_frames
+      self.no_of_future_frames = no_of_future_frames
+      self.update_history = collections.deque(maxlen=self.no_of_past_frames)
+      self.predict_history = collections.deque(maxlen=self.no_of_future_frames)
+
+      self.hits = 0
+      self.hit_streak = 0
+      self.age = 0
 
   def update(self,bbox):
-    """
-    Updates the state vector with observed bbox.
-    """
-    self.time_since_update = 0
-    self.history = []
-    self.hits += 1
-    self.hit_streak += 1
-    self.kf.update(convert_bbox_to_z(bbox))
-    self.update_history.append(bbox)
-    
+      """
+      Updates the state vector with observed bbox.
+      """
+      self.time_since_update = 0
+      self.history = []
+      self.hits += 1
+      self.hit_streak += 1
+      self.kf.update(convert_bbox_to_z(bbox))
+      self.update_history.append(bbox)
+
+      if  len(self.update_history)>=no_of_past_frames :
+          kbt = KalmanBoxTrajectory(self.update_history[0])
+          for j in range(1,no_of_past_frames):
+              kbt.predict()
+              p = kbt.update(self.update_history[j])
+          for k in range(no_of_future_frames):
+              p = kbt.predict()[0]
+              self.predict_history.append(p)
+
 
   def predict(self):
-    """
-    Advances the state vector and returns the predicted bounding box estimate.
-    """
-    if((self.kf.x[6]+self.kf.x[2])<=0):
-      self.kf.x[6] *= 0.0
-    self.kf.predict()
-    self.age += 1
-    if(self.time_since_update>0):
-      self.hit_streak = 0
-    self.time_since_update += 1
-    self.history.append(convert_x_to_bbox(self.kf.x))
-    return self.history[-1]
+      """
+      Advances the state vector and returns the predicted bounding box estimate.
+      """
+      if((self.kf.x[6]+self.kf.x[2])<=0):
+        self.kf.x[6] *= 0.0
+      self.kf.predict()
+      self.age += 1
+      if(self.time_since_update>0):
+        self.hit_streak = 0
+      self.time_since_update += 1
+      self.history.append(convert_x_to_bbox(self.kf.x))
+      return self.history[-1]
 
   def get_state(self):
-    """
-    Returns the current bounding box estimate.
-    """
-    return convert_x_to_bbox(self.kf.x)
+      """
+      Returns the current bounding box estimate.
+      """
+      return convert_x_to_bbox(self.kf.x)
+
+  def get_future_predictions(self):
+      """
+      Returns the future bounding box estimate.
+      """
+      return np.array(self.predict_history)
   
 class KalmanBoxTrajectory(object):
   """
@@ -227,6 +246,7 @@ def associate_detections_to_trackers(detections,trackers,iou_threshold = 0.3):
 
   return matches, np.array(unmatched_detections), np.array(unmatched_trackers)
 
+#trajectory class
 class Trajectory(object):
   def __init__(self, max_age=1, min_hits=3, iou_threshold=0.3, no_of_future_frames=5, no_of_past_frames=5):
     """
@@ -272,17 +292,18 @@ class Trajectory(object):
 
     # create and initialise new trackers for unmatched detections
     for i in unmatched_dets:
-        trk = KalmanBoxTracker(dets[i,:])
+        trk = KalmanBoxTracker(dets[i,:],self.no_of_past_frames,self.no_of_future_frames)
         self.trackers.append(trk)
     i = len(self.trackers)
     for trk in reversed(self.trackers):
-        d = trk.get_state()[0]
+        d = trk.get_state()[0] #current bounding box position
+        fp=f.get_future_predictions() #future predictions
         if (trk.time_since_update < 1) and (trk.hit_streak >= self.min_hits or self.frame_count <= self.min_hits):
-          ret.append(np.concatenate((d,[trk.id+1])).reshape(1,-1)) # +1 as MOT benchmark requires positive
+          ret.append([d,fp, trk.id]) 
         i -= 1
         # remove dead tracklet
         if(trk.time_since_update > self.max_age):
           self.trackers.pop(i)
     if(len(ret)>0):
-      return np.concatenate(ret)
+      return np.array(ret)
     return np.empty((0,5))
