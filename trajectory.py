@@ -297,7 +297,7 @@ class Trajectory(object):
     i = len(self.trackers)
     for trk in reversed(self.trackers):
         d = trk.get_state()[0] #current bounding box position
-        fp=f.get_future_predictions() #future predictions
+        fp = trk.get_future_predictions() #future predictions
         if (trk.time_since_update < 1) and (trk.hit_streak >= self.min_hits or self.frame_count <= self.min_hits):
           ret.append([d,fp, trk.id]) 
         i -= 1
